@@ -2,14 +2,12 @@
   "manifest_version": 3,
   "name": "GradeScope Progress Estimator",
   "version": "1.0",
-  "description": "Estimates the remaining time for grading assignments on Gradescope.",
-  "permissions": ["activeTab"],
+  "description": "Estimates the remaining time for grading assignments on GradeScope.",
+  "permissions": [],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "images/GradeScopeProgress.png",
-      "48": "images/GradeScopeProgress.png",
-      "128": "images/GradeScopeProgress.png"
+      "128": "images/icon128.png"
     }
   },
   "content_scripts": [
@@ -19,8 +17,6 @@
     }
   ],
   "icons": {
-    "16": "images/GradeScopeProgress.png",
-    "48": "images/GradeScopeProgress.png",
-    "128": "images/GradeScopeProgress.png"
+    "128": "images/icon128.png"
   }
 }

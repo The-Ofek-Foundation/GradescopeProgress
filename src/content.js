@@ -1,139 +1,190 @@
-// Retrieve initial graded count and total count
-let progressBarCaption = document.querySelector('.progressBar--caption.progressBar--caption-on-gray');
-let [graded, total] = progressBarCaption.textContent.match(/\d+/g).map(Number);
-let clickCount = graded;
-let targetCount = total;
+const progressBarCaption = document.querySelector('.progressBar--caption.progressBar--caption-on-gray');
+const getGradedTotal = () => progressBarCaption.textContent.match(/\d+/g).map(Number);
+
+let [graded, total] = getGradedTotal();
+const timePerSubmission = [];
+
+const createOverlay = () => {
+	const overlay = document.createElement('div');
+
+	overlay.style.position = 'fixed';
+	overlay.style.top = '0';
+	overlay.style.left = '0';
+	overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+	overlay.style.color = 'white';
+	overlay.style.padding = '10px';
+	overlay.style.fontSize = '14px';
+	overlay.style.zIndex = '1000';
+	overlay.title = 'Press P to pause, H to hide/show overlay';
+
+	return overlay;
+};
 
 let lastClickTime = null;
-let totalInterval = 0;
 let isPaused = true; // Start as paused by default
 let isOverlayHidden = false;
-let overlay = document.createElement('div');
+const overlay = createOverlay();
 let statusSpan = document.createElement('span');
 let blinkInterval;
 
-// Setup overlay style
-overlay.style.position = 'fixed';
-overlay.style.top = '0';
-overlay.style.left = '0';
-overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-overlay.style.color = 'white';
-overlay.style.padding = '10px';
-overlay.style.fontSize = '14px';
-overlay.style.zIndex = '1000';
-
-// Add overlay to the page
 document.body.appendChild(overlay);
 
-// Pretty print time in milliseconds
-function prettyPrintTime(ms) {
-	let totalSeconds = Math.floor(ms / 1000);
-	let hours = Math.floor(totalSeconds / 3600);
-	let minutes = Math.floor((totalSeconds % 3600) / 60);
-	let seconds = totalSeconds % 60;
+const prettyPrintTime = (ms) => {
+	const totalSeconds = Math.floor(ms / 1000);
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
 
 	let result = '';
-	if (hours > 0) {
-		result += `${hours}h `;
-	}
-	if (hours > 0 || minutes > 0) {
-		result += `${minutes}m `;
-	}
+	if (hours > 0) result += `${hours}h `;
+	if (hours > 0 || minutes > 0) result += `${minutes}m `;
 	result += `${seconds}s`;
 
 	return result;
 }
 
-// Calculate estimated completion time
-function estimateCompletionTime(interval) {
-	let now = new Date();
-	now.setMilliseconds(now.getMilliseconds() + interval * (targetCount - clickCount));
-	return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const calculateMean = (arr) => {
+	if (arr.length === 0) return 0;
+
+	return arr.reduce((acc, val) => acc + val, 0) / arr.length;
 }
 
-// Blinking effect for paused status
-function startBlinking() {
-	if (!blinkInterval) {
-		blinkInterval = setInterval(() => {
-			statusSpan.style.visibility = statusSpan.style.visibility === 'hidden' ? 'visible' : 'hidden';
-		}, 500);
+const calculateStandardDeviation = (arr) => {
+	const mean = calculateMean(arr);
+	const squareDiffs = arr.map(x => Math.pow(x - mean, 2));
+	const variance = calculateMean(squareDiffs);
+	return Math.sqrt(variance);
+}
+
+const estimateTimeLeftWithError = (numStandardDeviations = 1.96) => {
+	if (timePerSubmission.length === 0) return [0, 0];
+
+	const averageTime = calculateMean(timePerSubmission);
+	const standardDeviation = calculateStandardDeviation(timePerSubmission);
+	
+	const estimatedTimeLeft = (total - graded) * averageTime;
+	const standardError = standardDeviation / Math.sqrt(timePerSubmission.length);
+	const marginOfError = standardError * Math.sqrt(total - graded) * numStandardDeviations;
+
+	return [estimatedTimeLeft, marginOfError];
+};
+
+const prettyPrintEstimatedTimeLeft = (estimatedTimeLeft, marginOfError) => {
+	const estimatedTimeLeftTime = prettyPrintTime(estimatedTimeLeft);
+	
+	if (marginOfError == 0) return estimatedTimeLeftTime;
+	
+	const marginOfErrorTime = prettyPrintTime(marginOfError);
+	return `${estimatedTimeLeftTime} ± ${marginOfErrorTime}`;
+}
+
+const prettyPrintCompletionTime = (estimatedTimeLeft, marginOfError) => {
+	const now = new Date();
+	const estimatedCompletionTimeMs = now.getMilliseconds() + estimatedTimeLeft;
+	now.setMilliseconds(estimatedCompletionTimeMs);
+	const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	
+	if (marginOfError === 0)
+		return `~${time}`;
+
+	// Calculate the lower and upper bounds of the completion time
+	let lowerBound = new Date();
+	lowerBound.setMilliseconds(estimatedCompletionTimeMs - marginOfError);
+	lowerBound = lowerBound < now ? now : lowerBound;
+	const lowerBoundTime = lowerBound.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+	const upperBound = new Date();
+	upperBound.setMilliseconds(estimatedCompletionTimeMs + marginOfError);
+	const upperBoundTime = upperBound.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+	if (lowerBound === upperBound)
+		return `~${time}`;
+
+	return `${lowerBoundTime} - ${upperBoundTime}`;
+}
+
+const startBlinking = () => {
+	if (blinkInterval) return;
+
+	blinkInterval = setInterval(() => {
+		statusSpan.style.opacity = statusSpan.style.opacity === '0' ? '1' : '0';
+	}, 500);
+}
+
+const stopBlinking = () => {
+	if (!blinkInterval) return;
+
+	clearInterval(blinkInterval);
+	blinkInterval = null;
+	statusSpan.style.opacity = '1';
+}
+
+const updateOverlay = () => {
+	const averageTime = calculateMean(timePerSubmission);
+	const [estimatedTimeLeft, marginOfError] = estimateTimeLeftWithError();
+
+	overlay.textContent = '';
+	
+	const textContent = document.createTextNode(`Graded: ${graded}/${total}, ${prettyPrintTime(averageTime)}/submission, Estimated Time to Complete Grading: ${prettyPrintEstimatedTimeLeft(estimatedTimeLeft, marginOfError)}, Completion Time: ${prettyPrintCompletionTime(estimatedTimeLeft, marginOfError)}, Status: `);
+	
+	overlay.appendChild(textContent);
+	overlay.appendChild(statusSpan);
+	statusSpan.textContent = isPaused ? 'Paused' : 'Grading';
+
+	if (isPaused) startBlinking();
+	else stopBlinking();
+}
+
+const onGraded = () => {
+	const [newGraded, newTotal] = getGradedTotal();
+	const timeTaken = Date.now() - lastClickTime;
+	lastClickTime = Date.now();
+
+	if (newGraded !== graded) {
+		if (!isPaused && newGraded > graded)
+			timePerSubmission.push(timeTaken);
+	
+		[graded, total] = [newGraded, newTotal];
 	}
+
+	updateOverlay();
 }
 
-function stopBlinking() {
-	if (blinkInterval) {
-		clearInterval(blinkInterval);
-		blinkInterval = null;
-		statusSpan.style.visibility = 'visible';
-	}
-}
-
-// Update overlay content
-function updateOverlay() {
-    let avgInterval = (clickCount > graded && !isPaused) ? (totalInterval / (clickCount - graded)) : 0;
-    let timeLeft = (targetCount - clickCount) * avgInterval;
-
-    // Clear existing content
-    overlay.textContent = '';
-    
-    // Create text nodes for other content
-    let textContent = document.createTextNode(`Graded: ${clickCount}/${targetCount}, Average Interval: ${prettyPrintTime(avgInterval)}, Estimated Time to Complete Grading: ${prettyPrintTime(timeLeft)}, Completion Time: ${estimateCompletionTime(avgInterval)}, Status: `);
-    
-    // Append text nodes and statusSpan
-    overlay.appendChild(textContent);
-    overlay.appendChild(statusSpan);
-    statusSpan.textContent = isPaused ? 'Paused' : 'Active';
-
-    if (isPaused) {
-        startBlinking();
-    } else {
-        stopBlinking();
-    }
-}
-
-
-// Toggle overlay visibility
-function toggleOverlayVisibility() {
+const toggleOverlayVisibility = () => {
 	isOverlayHidden = !isOverlayHidden;
 	overlay.style.display = isOverlayHidden ? 'none' : 'block';
 }
 
-// Listen for key presses
-document.addEventListener('keydown', function(event) {
-	if (!isPaused && (event.key === 'z' || event.key === 'Z')) {
-		clickCount++;
-		let now = Date.now();
+const togglePause = () => {
+	isPaused = !isPaused;
+	lastClickTime = Date.now();
+	updateOverlay();
+}
 
-		if (lastClickTime !== null) {
-			totalInterval += now - lastClickTime;
-		}
+document.addEventListener('keydown', (event) => {
+	if (event.key === 'p' || event.key === 'P')
+		togglePause();
 
-		lastClickTime = now;
-		updateOverlay();
-	}
-
-	// Toggle pause/resume with 'P' key
-	if (event.key === 'p' || event.key === 'P') {
-		isPaused = !isPaused;
-		if (!isPaused) {
-			lastClickTime = Date.now(); // Resume timing from current time
-		}
-		updateOverlay();
-	}
-
-	// Hide/Show overlay with 'H' key
-	if (event.key === 'h' || event.key === 'H') {
+	if (event.key === 'h' || event.key === 'H')
 		toggleOverlayVisibility();
-	}
 });
 
-// Automatically pause when tab is not active
-document.addEventListener('visibilitychange', function() {
+document.addEventListener('visibilitychange', () => {
 	if (document.visibilityState === 'hidden') {
 		isPaused = true;
 		updateOverlay();
 	}
 });
 
-// Initial overlay content
+window.onblur = () => {
+	isPaused = true;
+	updateOverlay();
+}
+
+statusSpan.addEventListener('click', togglePause);
+statusSpan.style.cursor = 'pointer';
+
+const observer = new MutationObserver(onGraded);
+observer.observe(progressBarCaption, { childList: true, characterData: true, subtree: true });
+
 updateOverlay();
