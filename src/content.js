@@ -1,4 +1,9 @@
 const progressBarCaption = document.querySelector('.progressBar--caption.progressBar--caption-on-gray');
+
+if (!progressBarCaption) {
+	console.log('Could not find the progress bar caption.');
+} else {
+
 const getGradedTotal = () => progressBarCaption.textContent.match(/\d+/g).map(Number);
 
 let [graded, total] = getGradedTotal();
@@ -45,13 +50,13 @@ const prettyPrintTime = (ms) => {
 	return result;
 }
 
-const prettyPrintEstimatedTimeLeft = (estimatedTimeLeft, marginOfError) => {
+const prettyPrintEstimatedTimeLeft = (estimatedTimeLeft, confidence95) => {
 	if (estimatedTimeLeft === '?' || estimatedTimeLeft === 0) return estimatedTimeLeft;
 	
-	return `${prettyPrintTime(estimatedTimeLeft)} ± ${prettyPrintTime(marginOfError)}`;
+	return `${prettyPrintTime(estimatedTimeLeft)} ± ${prettyPrintTime(confidence95)}`;
 }
 
-const prettyPrintCompletionTime = (estimatedTimeLeft, marginOfError) => {
+const prettyPrintCompletionTime = (estimatedTimeLeft, confidence95) => {
 	if (estimatedTimeLeft === '?') return '?';
 	if (estimatedTimeLeft === 0) return 'N/A';
 	
@@ -61,17 +66,17 @@ const prettyPrintCompletionTime = (estimatedTimeLeft, marginOfError) => {
 	estimatedDate.setMilliseconds(estimatedCompletionTimeMs);
 	const time = estimatedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	
-	if (marginOfError === '?')
+	if (confidence95 === '?')
 		return `${time} ± ?`;
 
 	// Calculate the lower and upper bounds of the completion time
 	let lowerBound = new Date();
-	lowerBound.setMilliseconds(estimatedCompletionTimeMs - marginOfError);
+	lowerBound.setMilliseconds(estimatedCompletionTimeMs - confidence95);
 	lowerBound = lowerBound < now ? now : lowerBound;
 	const lowerBoundTime = lowerBound.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 	const upperBound = new Date();
-	upperBound.setMilliseconds(estimatedCompletionTimeMs + marginOfError);
+	upperBound.setMilliseconds(estimatedCompletionTimeMs + confidence95);
 	const upperBoundTime = upperBound.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 	if (lowerBound == upperBound)
@@ -98,18 +103,20 @@ const stopBlinking = () => {
 
 const updateOverlay = () => {
 	const averageTime = calculateMean(timePerSubmission) || '?';
-	const [estimatedTimeLeft, marginOfError] = extrapolateMeanAndError(timePerSubmission, total - graded);
+	const [estimatedTimeLeft, confidence95] = extrapolateMeanAndError(timePerSubmission, total - graded);
 
 	overlay.textContent = '';
 	
-	const textContent = document.createTextNode(`Graded: ${graded}/${total}, ${prettyPrintTime(averageTime)}/submission, Estimated Time to Complete Grading: ${prettyPrintEstimatedTimeLeft(estimatedTimeLeft, marginOfError)}, Completion Time: ${prettyPrintCompletionTime(estimatedTimeLeft, marginOfError)}, Status: `);
+	const textContent = document.createTextNode(`Graded: ${graded}/${total}, ${prettyPrintTime(averageTime)}/submission, Estimated Time to Complete Grading: ${prettyPrintEstimatedTimeLeft(estimatedTimeLeft, confidence95)}, Completion Time: ${prettyPrintCompletionTime(estimatedTimeLeft, confidence95)}, Status: `);
 	
 	overlay.appendChild(textContent);
 	overlay.appendChild(statusSpan);
-	statusSpan.textContent = isPaused ? 'Paused' : 'Grading';
+	statusSpan.textContent = graded === total ? 'Done Grading' : (isPaused ? 'Paused' : 'Grading');
 
-	if (isPaused) startBlinking();
+	if (isPaused && graded !== total) startBlinking();
 	else stopBlinking();
+
+	statusSpan.style.cursor = graded === total ? 'inherit' : 'pointer';
 }
 
 const onGraded = () => {
@@ -118,9 +125,14 @@ const onGraded = () => {
 	lastClickTime = Date.now();
 
 	if (newGraded !== graded) {
-		if (!isPaused && newGraded > graded)
+		if (!isPaused && newGraded > graded) {
 			timePerSubmission.push(timeTaken);
+			updateCache();
+		}
 	
+		if (newGraded > graded)
+			isPaused = false;
+
 		[graded, total] = [newGraded, newTotal];
 	}
 
@@ -133,6 +145,8 @@ const toggleOverlayVisibility = () => {
 }
 
 const togglePause = () => {
+	if (graded === total) return;
+
 	isPaused = !isPaused;
 	lastClickTime = Date.now();
 	updateOverlay();
@@ -155,10 +169,29 @@ window.onblur = () => {
 	updateOverlay();
 }
 
+const getIdsFromUrl = (url) => {
+	const urlObj = new URL(url);
+	const courseId = urlObj.pathname.split('/')[3];
+	const questionId = urlObj.pathname.split('/')[5];
+	return { courseId, questionId };
+}
+
+const { courseId, questionId } = getIdsFromUrl(window.location.href);
+const uniqueKey = `timePerSubmission-${courseId}-${questionId}`;
+
 statusSpan.addEventListener('click', togglePause);
-statusSpan.style.cursor = 'pointer';
 
 const observer = new MutationObserver(onGraded);
-observer.observe(progressBarCaption, { childList: true, characterData: true, subtree: true });
 
-updateOverlay();
+chrome.storage.sync.get([uniqueKey], (result) => {
+	if (result[uniqueKey])
+		timePerSubmission.push(...result[uniqueKey]);
+
+	updateOverlay();
+	observer.observe(progressBarCaption, { childList: true, characterData: true, subtree: true });
+});
+
+const updateCache = () =>
+	chrome.storage.sync.set({ [uniqueKey]: timePerSubmission });
+
+}

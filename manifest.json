@@ -3,7 +3,7 @@
   "name": "GradeScope Progress Estimator",
   "version": "1.0",
   "description": "Estimates the remaining time for grading assignments on GradeScope.",
-  "permissions": [],
+  "permissions": ["storage"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
