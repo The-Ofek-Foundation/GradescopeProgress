@@ -13,7 +13,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.gradescope.com/courses/*/questions/*/submissions/*/grade*"],
-      "js": ["src/content.js"]
+      "js": ["src/stats.js", "src/content.js"]
     }
   ],
   "icons": {

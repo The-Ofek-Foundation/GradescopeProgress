@@ -15,8 +15,8 @@ const createOverlay = () => {
 	overlay.style.padding = '10px';
 	overlay.style.fontSize = '14px';
 	overlay.style.zIndex = '1000';
-	overlay.title = 'Press P to pause, H to hide/show overlay';
-
+	overlay.title = 'Press H to hide/show overlay, and press Pause/Grading to toggle pausing/unpausing';
+	
 	return overlay;
 };
 
@@ -30,6 +30,8 @@ let blinkInterval;
 document.body.appendChild(overlay);
 
 const prettyPrintTime = (ms) => {
+	if (ms === '?') return '?';
+
 	const totalSeconds = Math.floor(ms / 1000);
 	const hours = Math.floor(totalSeconds / 3600);
 	const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -43,49 +45,24 @@ const prettyPrintTime = (ms) => {
 	return result;
 }
 
-const calculateMean = (arr) => {
-	if (arr.length === 0) return 0;
-
-	return arr.reduce((acc, val) => acc + val, 0) / arr.length;
-}
-
-const calculateStandardDeviation = (arr) => {
-	const mean = calculateMean(arr);
-	const squareDiffs = arr.map(x => Math.pow(x - mean, 2));
-	const variance = calculateMean(squareDiffs);
-	return Math.sqrt(variance);
-}
-
-const estimateTimeLeftWithError = (numStandardDeviations = 1.96) => {
-	if (timePerSubmission.length === 0) return [0, 0];
-
-	const averageTime = calculateMean(timePerSubmission);
-	const standardDeviation = calculateStandardDeviation(timePerSubmission);
-	
-	const estimatedTimeLeft = (total - graded) * averageTime;
-	const standardError = standardDeviation / Math.sqrt(timePerSubmission.length);
-	const marginOfError = standardError * Math.sqrt(total - graded) * numStandardDeviations;
-
-	return [estimatedTimeLeft, marginOfError];
-};
-
 const prettyPrintEstimatedTimeLeft = (estimatedTimeLeft, marginOfError) => {
-	const estimatedTimeLeftTime = prettyPrintTime(estimatedTimeLeft);
+	if (estimatedTimeLeft === '?' || estimatedTimeLeft === 0) return estimatedTimeLeft;
 	
-	if (marginOfError == 0) return estimatedTimeLeftTime;
-	
-	const marginOfErrorTime = prettyPrintTime(marginOfError);
-	return `${estimatedTimeLeftTime} ± ${marginOfErrorTime}`;
+	return `${prettyPrintTime(estimatedTimeLeft)} ± ${prettyPrintTime(marginOfError)}`;
 }
 
 const prettyPrintCompletionTime = (estimatedTimeLeft, marginOfError) => {
-	const now = new Date();
-	const estimatedCompletionTimeMs = now.getMilliseconds() + estimatedTimeLeft;
-	now.setMilliseconds(estimatedCompletionTimeMs);
-	const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	if (estimatedTimeLeft === '?') return '?';
+	if (estimatedTimeLeft === 0) return 'N/A';
 	
-	if (marginOfError === 0)
-		return `~${time}`;
+	const now = new Date();
+	const estimatedDate = new Date();
+	const estimatedCompletionTimeMs = estimatedDate.getMilliseconds() + estimatedTimeLeft;
+	estimatedDate.setMilliseconds(estimatedCompletionTimeMs);
+	const time = estimatedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	
+	if (marginOfError === '?')
+		return `${time} ± ?`;
 
 	// Calculate the lower and upper bounds of the completion time
 	let lowerBound = new Date();
@@ -97,7 +74,7 @@ const prettyPrintCompletionTime = (estimatedTimeLeft, marginOfError) => {
 	upperBound.setMilliseconds(estimatedCompletionTimeMs + marginOfError);
 	const upperBoundTime = upperBound.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-	if (lowerBound === upperBound)
+	if (lowerBound == upperBound)
 		return `~${time}`;
 
 	return `${lowerBoundTime} - ${upperBoundTime}`;
@@ -120,8 +97,8 @@ const stopBlinking = () => {
 }
 
 const updateOverlay = () => {
-	const averageTime = calculateMean(timePerSubmission);
-	const [estimatedTimeLeft, marginOfError] = estimateTimeLeftWithError();
+	const averageTime = calculateMean(timePerSubmission) || '?';
+	const [estimatedTimeLeft, marginOfError] = extrapolateMeanAndError(timePerSubmission, total - graded);
 
 	overlay.textContent = '';
 	
@@ -162,9 +139,6 @@ const togglePause = () => {
 }
 
 document.addEventListener('keydown', (event) => {
-	if (event.key === 'p' || event.key === 'P')
-		togglePause();
-
 	if (event.key === 'h' || event.key === 'H')
 		toggleOverlayVisibility();
 });
