@@ -4,12 +4,6 @@
   "version": "1.0",
   "description": "Estimates the remaining time for grading assignments on GradeScope.",
   "permissions": ["storage"],
-  "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "128": "images/icon128.png"
-    }
-  },
   "content_scripts": [
     {
       "matches": ["https://www.gradescope.com/courses/*/questions/*/submissions/*/grade*"],
