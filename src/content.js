@@ -27,14 +27,13 @@ const createOverlay = () => {
 
 let lastClickTime = null;
 let isPaused = true; // Start as paused by default
-let isOverlayHidden = false;
 const overlay = createOverlay();
 let statusSpan = document.createElement('span');
 let blinkInterval;
 
 document.body.appendChild(overlay);
 
-const prettyPrintTime = (ms) => {
+const prettyPrintTime = ms => {
 	if (ms === '?') return '?';
 
 	const totalSeconds = Math.floor(ms / 1000);
@@ -139,11 +138,6 @@ const onGraded = () => {
 	updateOverlay();
 }
 
-const toggleOverlayVisibility = () => {
-	isOverlayHidden = !isOverlayHidden;
-	overlay.style.display = isOverlayHidden ? 'none' : 'block';
-}
-
 const togglePause = () => {
 	if (graded === total) return;
 
@@ -151,11 +145,6 @@ const togglePause = () => {
 	lastClickTime = Date.now();
 	updateOverlay();
 }
-
-document.addEventListener('keydown', (event) => {
-	if (event.key === 'h' || event.key === 'H')
-		toggleOverlayVisibility();
-});
 
 document.addEventListener('visibilitychange', () => {
 	if (document.visibilityState === 'hidden') {
@@ -169,10 +158,10 @@ window.onblur = () => {
 	updateOverlay();
 }
 
-const getIdsFromUrl = (url) => {
+const getIdsFromUrl = url => {
 	const urlObj = new URL(url);
-	const courseId = urlObj.pathname.split('/')[3];
-	const questionId = urlObj.pathname.split('/')[5];
+	const courseId = urlObj.pathname.split('/')[2];
+	const questionId = urlObj.pathname.split('/')[4];
 	return { courseId, questionId };
 }
 
@@ -183,7 +172,7 @@ statusSpan.addEventListener('click', togglePause);
 
 const observer = new MutationObserver(onGraded);
 
-chrome.storage.sync.get([uniqueKey], (result) => {
+chrome.storage.sync.get([uniqueKey], result => {
 	if (result[uniqueKey])
 		timePerSubmission.push(...result[uniqueKey]);
 
